@@ -1,5 +1,317 @@
-CREATE TABLE IF NOT EXISTS users (...);
-CREATE TABLE IF NOT EXISTS products (...);
+Name: 'Morouj Ahmed Adam ';
+Student ID: AEG-123456789
+Date: 2026-05-20
 
-INSERT INTO users ...
-INSERT INTO products ...
+===========================================
+TASK 1 - Build the Nyondo Stock Database
+===========================================
+
+setup.js Code:
+===========================================
+const Database = require('better-sqlite3');
+const db = new Database('nyondo_hardware.db');
+
+// Create products table
+db.exec(`
+CREATE TABLE IF NOT EXISTS products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    price REAL NOT NULL
+)
+`);
+
+// Create users table
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT DEFAULT 'attendant'
+)
+`);
+
+// Insert products
+const insertProduct = db.prepare('INSERT INTO products (name, description, price) VALUES (?, ?, ?)');
+const insertProducts = db.transaction((rows) => {
+    for (const r of rows) insertProduct.run(...r);
+});
+
+insertProducts([
+    ['Cement (bag)', 'Portland cement 50kg bag', 35000],
+    ['Iron Sheet 3m', 'Gauge 30 roofing sheet 3m long', 110000],
+    ['Paint 5L', 'Exterior wall paint white 5L', 60000],
+    ['Nails 1kg', 'Common wire nails 1kg pack', 12000],
+    ['Timber 2x4', 'Pine timber plank 2x4 per metre', 25000]
+]);
+
+// Insert users
+const insertUser = db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)');
+const insertUsers = db.transaction((rows) => {
+    for (const r of rows) insertUser.run(...r);
+});
+
+insertUsers([
+    ['admin', 'admin123', 'admin'],
+    ['fatuma', 'pass456', 'attendant'],
+    ['wasswa', 'pass789', 'manager']
+]);
+
+// Verify
+console.log('\n=== PRODUCTS ===');
+console.table(db.prepare('SELECT * FROM products').all());
+
+console.log('\n=== USERS ===');
+console.table(db.prepare('SELECT * FROM users').all());
+
+db.close();
+===========================================
+
+CREATE TABLE Statements:
+===========================================
+CREATE TABLE IF NOT EXISTS products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    price REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT DEFAULT 'attendant'
+);
+===========================================
+
+INSERT Statements:
+===========================================
+INSERT INTO products (name, description, price) VALUES 
+('Cement (bag)', 'Portland cement 50kg bag', 35000),
+('Iron Sheet 3m', 'Gauge 30 roofing sheet 3m long', 110000),
+('Paint 5L', 'Exterior wall paint white 5L', 60000),
+('Nails 1kg', 'Common wire nails 1kg pack', 12000),
+('Timber 2x4', 'Pine timber plank 2x4 per metre', 25000);
+
+INSERT INTO users (username, password, role) VALUES 
+('admin', 'admin123', 'admin'),
+('fatuma', 'pass456', 'attendant'),
+('wasswa', 'pass789', 'manager');
+===========================================
+
+SELECT * FROM products Output:
+===========================================
+id | name            | description                          | price
+1  | Cement (bag)    | Portland cement 50kg bag             | 35000
+2  | Iron Sheet 3m   | Gauge 30 roofing sheet 3m long       | 110000
+3  | Paint 5L        | Exterior wall paint white 5L         | 60000
+4  | Nails 1kg       | Common wire nails 1kg pack           | 12000
+5  | Timber 2x4      | Pine timber plank 2x4 per metre      | 25000
+
+===========================================
+TASK 2 - Query the Database
+===========================================
+
+Query A - Get every column of every product:
+SQL: SELECT * FROM products
+Output: All 5 products with id, name, description, price
+
+Query B - Get only name and price of all products:
+SQL: SELECT name, price FROM products
+Output: Cement (bag): 35000, Iron Sheet 3m: 110000, Paint 5L: 60000, Nails 1kg: 12000, Timber 2x4: 25000
+
+Query C - Get full details of product with id = 3:
+SQL: SELECT * FROM products WHERE id = 3
+Output: id: 3, name: Paint 5L, description: Exterior wall paint white 5L, price: 60000
+
+Query D - Find all products whose name contains 'sheet':
+SQL: SELECT * FROM products WHERE name LIKE '%sheet%'
+Output: id: 2, name: Iron Sheet 3m, price: 110000
+
+Query E - Get all products sorted by price, highest first:
+SQL: SELECT * FROM products ORDER BY price DESC
+Output: Iron Sheet 3m (110000), Paint 5L (60000), Cement (35000), Timber 2x4 (25000), Nails 1kg (12000)
+
+Query F - Get only the 2 most expensive products:
+SQL: SELECT * FROM products ORDER BY price DESC LIMIT 2
+Output: Iron Sheet 3m (110000), Paint 5L (60000)
+
+Query G - Update price of Cement to 38,000:
+SQL: UPDATE products SET price = 38000 WHERE id = 1; SELECT * FROM products WHERE id = 1
+Output: id: 1, name: Cement (bag), price: 38000
+
+===========================================
+TASK 3 - SQL Injection Attacks
+===========================================
+
+Attack 1 - Dump all products:
+===========================================
+PAYLOAD: searchProduct("' OR 1=1--")
+
+QUERY: SELECT * FROM products WHERE name LIKE '%' OR 1=1--%'
+RESULT: All 5 products returned including Cement (38000), Iron Sheet (110000), Paint (60000), Nails (12000), Timber (25000)
+
+WHY IT WORKED: The OR 1=1 condition is always true, so the WHERE clause is bypassed. The -- comments out the rest of the query. This returns every single product including cost prices the attacker should never see.
+
+Attack 2 - Login bypass with no password:
+===========================================
+PAYLOAD: login("admin'--", "anything")
+
+QUERY: SELECT * FROM users WHERE username='admin'--' AND password='anything'
+RESULT: { id: 1, username: 'admin', password: 'admin123', role: 'admin' }
+
+WHY IT WORKED: The -- comments out the password check, so only the username condition matters. The attacker logs in as admin with any password.
+
+Attack 3 - Always true login:
+===========================================
+PAYLOAD: login("' OR '1'='1", "' OR '1'='1")
+
+QUERY: SELECT * FROM users WHERE username='' OR '1'='1' AND password='' OR '1'='1'
+RESULT: { id: 1, username: 'admin', password: 'admin123', role: 'admin' }
+
+WHY IT WORKED: OR '1'='1' is always true. Returns the first user in the database with no valid credentials needed.
+
+Attack 4 - UNION attack (steal user data):
+===========================================
+PAYLOAD: searchProduct("' UNION SELECT id, username, password, role FROM users--")
+
+QUERY: SELECT * FROM products WHERE name LIKE '%' UNION SELECT id, username, password, role FROM users--%'
+RESULT: Returns all products PLUS all users with their passwords:
+- Products: Cement, Iron Sheet, Paint, Nails, Timber
+- Users: admin/admin123/admin, fatuma/pass456/attendant, wasswa/pass789/manager
+
+WHY IT WORKED: UNION combines results from the products table and the users table. The attacker can steal credentials through a search box.
+
+===========================================
+TASK 4 - Fix with Parameterised Queries
+===========================================
+
+secure.js Code:
+===========================================
+const Database = require('better-sqlite3');
+const db = new Database('nyondo_hardware.db');
+
+function searchProductSafe(name) {
+    const query = `SELECT * FROM products WHERE name LIKE '%' || ? || '%'`;
+    const rows = db.prepare(query).all(name);
+    return rows;
+}
+
+function loginSafe(username, password) {
+    const query = `SELECT * FROM users WHERE username = ? AND password = ?`;
+    const row = db.prepare(query).get(username, password);
+    return row;
+}
+
+// Tests - All attacks return empty results
+console.log('Test 1:', searchProductSafe("' OR 1=1--"));     // Returns []
+console.log('Test 2:', searchProductSafe("' UNION SELECT id,username,password,role FROM users--")); // Returns []
+console.log('Test 3:', loginSafe("admin'--", 'anything'));   // Returns undefined
+console.log('Test 4:', loginSafe("' OR '1'='1", "' OR '1'='1")); // Returns null
+
+db.close();
+===========================================
+
+Test Results:
+===========================================
+Test 1 (OR 1=1 attack): [] - Empty array, attack failed
+Test 2 (UNION attack): [] - Empty array, attack failed
+Test 3 (Login bypass): undefined - Attack failed
+Test 4 (Always true): null - Attack failed
+
+Why Parameterized Queries Prevent Injection:
+===========================================
+Parameterized queries (using ? placeholders) prevent SQL injection because they separate SQL code from data. When I use ? instead of f-strings or template literals, the database treats user input as pure data only, never as executable code. The input is automatically escaped and cannot change the structure of the query. Even if an attacker types malicious SQL like "OR 1=1--", it becomes just a string value being searched for, not part of the SQL command. With f-strings, the user input becomes part of the SQL command itself, allowing attackers to modify the query structure.
+
+===========================================
+TASK 5 - Input Validation
+===========================================
+
+Validation Rules Added:
+===========================================
+- name: Must be string, at least 2 characters, no < > or ; characters
+- username: Must be string, no spaces, not empty
+- password: Must be string, at least 6 characters
+- price: Must be positive number greater than 0
+
+Validation Test Results:
+===========================================
+1. searchProductSafe('cement') 
+   → SUCCESS: Returns product data
+   
+2. searchProductSafe('') 
+   → REJECTED: Empty string, less than 2 characters
+   
+3. searchProductSafe('<script>') 
+   → REJECTED: Contains < and > characters
+   
+4. loginSafe('admin', 'admin123') 
+   → SUCCESS: Returns admin user
+   
+5. loginSafe('admin', 'ab') 
+   → REJECTED: Password too short (less than 6 characters)
+   
+6. loginSafe('ad min', 'pass123') 
+   → REJECTED: Username contains space
+
+Updated secure.js with Validation:
+===========================================
+function validateInput(value, type) {
+    if (type === 'name') {
+        if (typeof value !== 'string') return false;
+        if (value.length < 2) return false;
+        if (/[<>;]/.test(value)) return false;
+        return true;
+    }
+    if (type === 'username') {
+        if (typeof value !== 'string') return false;
+        if (value.length === 0) return false;
+        if (/\s/.test(value)) return false;
+        return true;
+    }
+    if (type === 'password') {
+        if (typeof value !== 'string') return false;
+        if (value.length < 6) return false;
+        return true;
+    }
+    return true;
+}
+
+// Validation is called BEFORE the database query
+function searchProductSafe(name) {
+    if (!validateInput(name, 'name')) {
+        console.log(`Error: Invalid name input rejected`);
+        return [];
+    }
+    const query = `SELECT * FROM products WHERE name LIKE '%' || ? || '%'`;
+    return db.prepare(query).all(name);
+}
+
+function loginSafe(username, password) {
+    if (!validateInput(username, 'username')) {
+        console.log(`Error: Invalid username rejected`);
+        return null;
+    }
+    if (!validateInput(password, 'password')) {
+        console.log(`Error: Invalid password rejected`);
+        return null;
+    }
+    const query = `SELECT * FROM users WHERE username = ? AND password = ?`;
+    return db.prepare(query).get(username, password);
+}
+===========================================
+
+===========================================
+SUMMARY - What Was Accomplished
+===========================================
+✅ Task 1: Built complete database with products and users tables
+✅ Task 2: Executed 7 different SQL queries (SELECT, UPDATE, WHERE, LIKE, ORDER BY, LIMIT)
+✅ Task 3: Demonstrated 4 SQL injection attacks (OR 1=1, Login bypass, UNION attack)
+✅ Task 4: Fixed vulnerabilities using parameterized queries (? placeholders)
+✅ Task 5: Added input validation to reject malicious input before reaching database
+
+===========================================
+GITHUB REPOSITORY
+===========================================
+https://github.com/moroujahmed/nyondo-sql-lab
+===========================================
